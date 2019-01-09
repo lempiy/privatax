@@ -1,22 +1,42 @@
 package main
 
 import (
-	"flag"
 	"github.com/lempiy/privatax/lib"
 	"log"
-	"strings"
+	"strconv"
+	"syscall/js"
+)
+
+var (
+	beforeUnloadCh = make(chan struct{})
 )
 
 func main() {
-	dbfs := flag.String("dbf", "", "Comma-separated paths to Privat Bank *.dbf source files")
-	flag.Parse()
-	if dbfs == nil || *dbfs == "" {
-		log.Fatal("'dbf' is required flag")
+	callback := js.NewCallback(parseFunc)
+	defer callback.Release()
+	setPrintMessage := js.Global().Get("setParseFunc")
+	setPrintMessage.Invoke(callback)
+	beforeUnloadCb := js.NewEventCallback(0, beforeUnload)
+	defer beforeUnloadCb.Release()
+	addEventListener := js.Global().Get("addEventListener")
+	addEventListener.Invoke("beforeunload", beforeUnloadCb)
+	<-beforeUnloadCh
+}
+
+func parseFunc(args []js.Value) {
+	len := args[0].Length()
+	buffer := make([]byte, 0, len)
+	for i := 0; i < len; i++ {
+		v := args[0].Get(strconv.Itoa(i))
+		buffer = append(buffer, byte(v.Int()))
 	}
-	dbfSources := strings.Split(*dbfs, ",")
-	count, err := lib.Count(dbfSources)
+	_, err := lib.Count(buffer)
 	if err != nil {
 		log.Fatalf("cannot count tax amount. Err: %s", err)
 	}
-	log.Printf("Tax amount is %.2f UAH", count)
+	args[1].Invoke("returned")
+}
+
+func beforeUnload(event js.Value) {
+	beforeUnloadCh <- struct{}{}
 }

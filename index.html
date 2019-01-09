@@ -1,0 +1,41 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+		<input type="file" class="filer">
+		<script src="wasm_exec.js"></script>
+		<script>
+			let printMessage;
+
+			function setParseFunc(callback) {
+				parseFunc = callback;
+			}
+			const go = new Go();
+			const initWasm = async (resp, importObject) => {
+				const source = await (await resp).arrayBuffer();
+				return await WebAssembly.instantiate(source, importObject);
+			};
+			const filer = document.querySelector(".filer");
+			filer.onchange = e => {
+				const files = Array.from(event.target.files)
+				if (files.length === 0) return
+				const f = files[0]
+				const reader = new FileReader()
+				reader.onload = e => {
+					const result = event.target.result;
+					const bytes = new Uint8Array(result, 0, result.byteLength);
+					parseFunc(bytes, function (val) {
+						console.log(val)
+					})
+				};
+				reader.readAsArrayBuffer(f)
+			}
+			initWasm(fetch("privatax.wasm"), go.importObject).then((result) => {
+				console.log(go)
+				go.run(result.instance);
+
+
+			});
+		</script>
+	</head>
+	<body></body>
+</html>
