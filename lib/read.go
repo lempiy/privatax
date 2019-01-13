@@ -1,7 +1,7 @@
 package lib
 
 import (
-	"fmt"
+	"encoding/json"
 	"github.com/LindsayBradford/go-dbf/godbf"
 	"strconv"
 )
@@ -12,18 +12,19 @@ const (
 	CurrencyKey = "CUR"
 )
 
-func Count(source []byte) (float64, error) {
-	return count(source)
+func Parse(source []byte) (string, error) {
+	return parse(source)
 }
 
-func count(source []byte) (count float64, err error) {
+func parse(source []byte) (parsed string, err error) {
 	var dbfTable *godbf.DbfTable
 	dbfTable, err = godbf.NewFromByteArray(source, "IBM866")
 	if err != nil {
 		return
 	}
-	names := dbfTable.FieldNames()
+	var arr []map[string]interface{}
 	for i := 0; i < dbfTable.NumberOfRecords(); i++ {
+		data := make(map[string]interface{})
 		var sum string
 		sum, err = dbfTable.FieldValueByName(i, SumKey)
 		var f float64
@@ -31,18 +32,19 @@ func count(source []byte) (count float64, err error) {
 		if f <= 0 {
 			continue
 		}
-		for _, name := range names {
-			var val string
-			val, err = dbfTable.FieldValueByName(i, name)
-			fmt.Printf("[%s]: '%s'\n", name, val)
+		names := dbfTable.FieldNames()
+		for _, n := range names {
+			data[n], err = dbfTable.FieldValueByName(i, n)
+			if err != nil {
+				return
+			}
 		}
-		var date string
-		date, err = dbfTable.FieldValueByName(i, DateKey)
-
-		var curr string
-		curr, err = dbfTable.FieldValueByName(i, CurrencyKey)
-		fmt.Printf("[%s] %s %s\n", date, sum, curr)
-		fmt.Println("--------------------------------")
+		arr = append(arr, data)
 	}
+	bts, err := json.Marshal(arr)
+	if err != nil {
+		return
+	}
+	parsed = string(bts)
 	return
 }

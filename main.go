@@ -30,11 +30,11 @@ func parseFunc(args []js.Value) {
 		v := args[0].Get(strconv.Itoa(i))
 		buffer = append(buffer, byte(v.Int()))
 	}
-	_, err := lib.Count(buffer)
+	value, err := lib.Parse(buffer)
 	if err != nil {
-		log.Fatalf("cannot count tax amount. Err: %s", err)
+		log.Fatalf("cannot parse file. Err: %s", err)
 	}
-	args[1].Invoke("returned")
+	args[1].Invoke(value)
 }
 
 func beforeUnload(event js.Value) {

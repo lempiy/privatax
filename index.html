@@ -1,41 +1,153 @@
 <html>
 	<head>
 		<meta charset="utf-8">
-		<input type="file" class="filer">
-		<script src="wasm_exec.js"></script>
-		<script>
-			let printMessage;
-
-			function setParseFunc(callback) {
-				parseFunc = callback;
+		<input type="file" multiple class="filer">
+		<style type="text/css">
+			table {
+				border-collapse: collapse;
 			}
-			const go = new Go();
-			const initWasm = async (resp, importObject) => {
-				const source = await (await resp).arrayBuffer();
-				return await WebAssembly.instantiate(source, importObject);
-			};
-			const filer = document.querySelector(".filer");
-			filer.onchange = e => {
-				const files = Array.from(event.target.files)
-				if (files.length === 0) return
-				const f = files[0]
+			table, th, td {
+				border: 1px solid black;
+				margin: 20px;
+			}
+			td {
+				padding: 5px;
+				cursor: pointer;
+			}
+			tr.selected {
+				background-color: #ccc;
+			}
+			button {
+				margin: 10px 0;
+			}
+		</style>
+		<script src="wasm_exec.js"></script>
+		<script src="decimal.min.js"></script>
+	</head>
+	<body>
+	<div class="tabler"></div>
+	<script>
+		const tabler = document.querySelector(".tabler");
+		let datas = [];
+
+		function setParseFunc(callback) {
+			parseFunc = callback;
+		}
+		const go = new Go();
+		const initWasm = async (resp, importObject) => {
+			const source = await (await resp).arrayBuffer();
+			return await WebAssembly.instantiate(source, importObject);
+		};
+		const onParseFiles = data => {
+			tabler.innerHTML = "";
+			selected = {};
+			datas = [];
+			const values = data.map(str => JSON.parse(str))
+			const btn = document.createElement('button')
+			btn.textContent = 'Calculate'
+			btn.addEventListener('click', onSubmit)
+			tabler.append(btn);
+			values.forEach(arr => {
+				const html = `<table>${arr.reduce((acc, row) => {
+					datas.push(row);
+					acc += `<tr id='${row["REF"]}'>${Object.entries(row).reduce((acc, [key, value]) => {
+						acc += `<td>${value}</td>`;
+						return acc
+					}, '')}</tr>`
+					return acc
+				}, '')}</table>`;
+				tabler.insertAdjacentHTML('beforeend', html)
+			})
+		};
+		const filer = document.querySelector(".filer");
+		let selected = {};
+
+		const onPick = e => {
+			const tr = hoistToTr(e.target)
+			if (tr == null) {
+				return
+			}
+			if (selected[tr.id]) {
+				tr.classList.remove('selected')
+				delete selected[tr.id]
+			} else {
+				tr.classList.add('selected')
+				selected[tr.id] = datas.find(v => v["REF"] === tr.id);
+				console.log(selected)
+			}
+		};
+
+		function onSubmit(e) {
+			const promise = Object.entries(selected).reduce(async function(before, [id, row]) {
+				return before.then(async function(sum) {
+					const v = await getSum(row)
+					sum = sum.plus(v);
+					return Promise.resolve(sum)
+				});
+			}, Promise.resolve(new Decimal(0.0)));
+			promise.then(sum => {
+				tabler.insertAdjacentHTML('afterbegin', `<p><b>Сума: </b><span>${sum.toFixed(2)+ ' UAH'}</span></p>`)
+			});
+		};
+
+		async function getSum(row) {
+			if(row['CUR'] === 'UAH') {
+				return Promise.resolve(new Decimal(row['SUM']))
+			} else {
+				const data = await fetchExchange(row);
+				const v = new Decimal(row['SUM']);
+				return Promise.resolve(v.times(data[0].rate))
+			}
+		}
+
+		const formatDate = date => {
+			return date.slice(0, 10).replace("-", "").replace("-", "")
+		};
+
+		async function fetchExchange(row) {
+			const url = `https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?valcode=${row['CUR']}&date=${formatDate(row['DATE'])}&json`
+			return fetch(url).then(res => {
+				if (res.status >= 400) {
+					return Promise.reject(res.text())
+				} else {
+					return res.json()
+				}
+			})
+		}
+
+		tabler.addEventListener("click", onPick);
+
+		filer.onchange = e => {
+			const files = Array.from(event.target.files)
+			if (files.length === 0) return
+			Promise.all(files.map(f => parseFile(f))).then(onParseFiles)
+		};
+		const parseFile = f => {
+			return new Promise(resolve => {
 				const reader = new FileReader()
 				reader.onload = e => {
 					const result = event.target.result;
 					const bytes = new Uint8Array(result, 0, result.byteLength);
-					parseFunc(bytes, function (val) {
-						console.log(val)
-					})
+					parseFunc(bytes, resolve)
 				};
 				reader.readAsArrayBuffer(f)
+			})
+		};
+
+		const hoistToTr = target => {
+			while (target != document.body) {
+				if (target.tagName.toUpperCase() === 'TR') {
+					return target
+				} else {
+					target = target.parentNode
+				}
 			}
-			initWasm(fetch("privatax.wasm"), go.importObject).then((result) => {
-				console.log(go)
-				go.run(result.instance);
-
-
-			});
-		</script>
-	</head>
-	<body></body>
+			return null
+		};
+		initWasm(fetch("privatax.wasm"), go.importObject).then((result) => {
+			console.log(go)
+			go.run(result.instance);
+		});
+	</script>
+	</body>
 </html>
